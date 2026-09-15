@@ -1,0 +1,22 @@
+# macOS / Windows
+.DS_Store
+._*
+Thumbs.db
+
+# Dependencies and generated output
+node_modules/
+coverage/
+dist/
+*.log
+
+# Local environment and editor settings
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+
+# Scratch files
+work/
+*.tmp
+*.swp
