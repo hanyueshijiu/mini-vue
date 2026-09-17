@@ -11,7 +11,11 @@
     "test": "node 01-reactivity/check.mjs && node 01-reactivity/check.mjs --reference",
     "test:practice": "node 01-reactivity/check.mjs",
     "test:reference": "node 01-reactivity/check.mjs --reference",
-    "demo:branch": "node 01-reactivity/branch-demo.mjs"
+    "demo:branch": "node 01-reactivity/branch-demo.mjs",
+    "test:02": "node 02-effect-cleanup/check.mjs",
+    "test:02:reference": "node 02-effect-cleanup/check.mjs --reference",
+    "test:02:stop": "node 02-effect-cleanup/check-stop.mjs",
+    "test:02:stop:reference": "node 02-effect-cleanup/check-stop.mjs --reference"
   },
   "repository": {
     "type": "git",
