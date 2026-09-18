@@ -2,6 +2,18 @@
 
 本课沿用第一课的 JavaScript、WeakMap → Map → Set，以及学习中提出的 `{ target, key }` 反向记录方案。依赖清理与 stop 的手写实现均已完成，分别通过 5 项、6 项验收（2026-09-17）。
 
+## 本课学习入口
+
+| 内容 | 入口 |
+| --- | --- |
+| 手写实现 | [practice.mjs](./practice.mjs) |
+| 参考实现 | [reference.mjs](./reference.mjs) |
+| 依赖清理验收 | [check.mjs](./check.mjs)，5 项 |
+| stop 验收 | [check-stop.mjs](./check-stop.mjs)，6 项 |
+| 问答复习 | [5 道复习题与折叠答案](#复习练习) |
+
+下面先解释实现过程，再整理复习练习。复习题使用本课已完成的实现；每题独立运行，可从 practice.mjs 导入 reactive、effect、stop。
+
 ## 从第一课的复习题开始
 
 ```js
@@ -115,7 +127,7 @@ node check.mjs --reference
 - 清理一个 runner 时保留其他订阅者。
 - 在不同对象的同名属性之间切换时清理正确。
 
-完成后再对照 [reference.mjs](./reference.mjs)。第一课的文件保留原有行为，便于比较；根目录的 npm test 仍检验第一课，本课练习使用独立命令。
+完成后再对照 [reference.mjs](./reference.mjs)。第一课的文件保留原有行为，便于比较；根目录的 npm test 验收已完成课程，也可以使用上面的命令单独运行本课。
 
 ## 第二部分：stop 停止自动更新
 
@@ -214,6 +226,206 @@ reactive 创建代理，不会主动创建或执行 effect。业务代码调用 
 阅读时还要区分 cleanupDeps 与 cleanupEffect：前者处理依赖关系；后者运行注册的清理回调。本节手写的 cleanup 对应的是依赖关系的清理问题。
 
 stop 可以对照 [ReactiveEffect.stop](https://github.com/vuejs/core/blob/v3.5.42/packages/reactivity/src/effect.ts#L183) 和 run 中对 ACTIVE 标记的判断。我们用 stopped 布尔值表达状态；正式实现使用 EffectFlags，并管理额外的清理与生命周期信息。
+
+## 复习练习
+
+整理日期：2026-09-18。先独立写出输出和依赖关系，再展开答案。判断每次更新时，都要看当时的订阅集合，不能只根据表达式的当前值推测函数一定会执行。
+
+### 练习 1：分支切换与重新订阅
+
+```js
+const state = reactive({ ok: true, text: 'hello' });
+
+effect(() => {
+  console.log(state.ok ? state.text : '隐藏');
+});
+
+state.ok = false;
+state.text = 'world';
+state.ok = true;
+state.text = 'Vue';
+```
+
+问题：完整输出是什么？每轮执行后，runner 分别订阅哪些属性？
+
+<details>
+<summary>查看答案与推演</summary>
+
+```text
+hello
+隐藏
+world
+Vue
+```
+
+| 操作 | 是否执行 runner | 执行后的订阅 |
+| --- | --- | --- |
+| 注册 effect | 首次执行，打印 hello | ok、text |
+| ok = false | 执行，打印隐藏 | 只有 ok |
+| text = 'world' | 不执行 | 只有 ok |
+| ok = true | 执行，打印 world | ok、text |
+| text = 'Vue' | 执行，打印 Vue | ok、text |
+
+复习时曾多写一次“隐藏”。需要把“只订阅 ok”的判断落实到后续通知：text 的集合里已没有这个 runner，修改 text 就不会让它重跑。
+
+text 的值仍然会变成 world，set 也仍然会调用 trigger；只是本次没有这个订阅者需要通知。切换回 true 时，fn 再次读取 text，才重新登记关系并打印它的当前值。
+
+</details>
+
+### 练习 2：集合副本与成员引用
+
+```js
+function runnerA() {}
+runnerA.stopped = false;
+
+const dep = new Set([runnerA]);
+const effectsToRun = new Set(dep);
+
+dep.delete(runnerA);
+runnerA.stopped = true;
+
+console.log(effectsToRun.has(runnerA));
+console.log([...effectsToRun][0].stopped);
+```
+
+问题：两次输出是什么？哪些对象是独立的，哪些引用是共享的？
+
+<details>
+<summary>查看答案与推演</summary>
+
+```text
+true
+true
+```
+
+new Set(dep) 创建新的集合，并迭代原集合的成员，把同一个函数引用加入新集合。它没有进行序列化，也没有深拷贝函数。
+
+```text
+dep          → 集合 A ──┐
+                        ├──→ 同一个 runnerA 函数对象
+effectsToRun → 集合 B ──┘
+```
+
+从集合 A 删除成员不会删除集合 B 的记录；但修改 runnerA.stopped，两个集合中的引用都能观察到该函数对象的新状态。
+
+Set 没有数字下标。题目先通过展开语法转成数组，再用 [0] 取得成员。直接写 effectsToRun[0] 无法取得集合的首个成员。
+
+这对应 trigger 的两个不同要求：复制集合固定本轮通知名单；执行前检查 stopped，读取的是函数对象当下的状态。
+
+</details>
+
+### 练习 3：停止后的手动执行
+
+```js
+const state = reactive({ count: 2 });
+let runs = 0;
+
+const runner = effect(() => {
+  runs++;
+  return state.count * 2;
+});
+
+stop(runner);
+state.count = 3;
+console.log(runner(), runs);
+
+state.count = 4;
+console.log(state.count, runs);
+```
+
+问题：两处输出是什么？停止后的手动执行为什么不会重新开启自己的订阅？
+
+<details>
+<summary>查看答案与推演</summary>
+
+```text
+6 2
+4 2
+```
+
+注册 effect 时先执行一次，runs 为 1。stop 移除已有订阅并设置停止标记；count 改为 3 不触发回调。手动调用 runner 时直接 return fn()，计算 3 × 2，runs 增加到 2。随后 count 改成 4，数据更新，回调不自动执行。
+
+本例中的手动调用发生在 effect 外部。提前返回没有把当前 runner 设置为 activeEffect，fn 读取属性时不会为这个 runner 重新建立订阅。
+
+stopped 保存 runner 的停止状态；activeEffect 表示当前的收集上下文；previous 只备份进入本次执行之前的 activeEffect。previous 不保存依赖表，finally 恢复上下文也不会删除已登记的依赖。
+
+</details>
+
+### 练习 4：外层 effect 调用已停止的 runner
+
+```js
+const state = reactive({ count: 1 });
+
+const inner = effect(() => state.count * 2);
+stop(inner);
+
+const outer = effect(() => {
+  console.log(inner());
+});
+
+state.count = 2;
+```
+
+问题：完整输出是什么？inner 内部读取 count 时，activeEffect 指向谁？
+
+<details>
+<summary>查看答案与推演</summary>
+
+```text
+2
+4
+```
+
+最初注册 inner 只返回计算值，没有 console.log。注册 outer 时，activeEffect 已经是 outer 对应的 runner。inner 已停止，因此直接执行 fn，没有切换 activeEffect；fn 的属性读取由外层 runner 收集。
+
+count 的订阅集合中保存的是 outer。count 变成 2 后，自动重跑的是 outer，它再次手动调用 inner，计算并打印 4。inner 自己的自动订阅没有恢复。
+
+因此，停止一个 runner 不能理解成全局关闭依赖收集，也不能在停止后的手动调用中强行把 activeEffect 设为 undefined，否则会破坏外层的收集上下文。
+
+</details>
+
+### 练习 5：本轮通知过程中停止另一个 runner
+
+```js
+const state = reactive({ count: 0 });
+let runnerB;
+
+const runnerA = effect(() => {
+  if (state.count === 1) stop(runnerB);
+});
+
+runnerB = effect(() => {
+  console.log('B', state.count);
+});
+
+state.count = 1;
+state.count = 2;
+```
+
+问题：完整输出是什么？B 已经进入本轮通知副本，为什么还能被跳过？
+
+<details>
+<summary>查看答案与推演</summary>
+
+```text
+B 0
+```
+
+首次注册 A 时 count 是 0，不会调用 stop；随后注册 B，立即打印 B 0。两个 runner 都订阅 count，A 先登记。
+
+count = 1 时，通知副本包含 A、B。A 先执行，调用 stop(B)，从原集合移除 B 并设置 B.stopped = true。副本仍保存 B 的函数引用，但 trigger 在执行前检查停止状态，因此跳过它。
+
+count = 2 时，情况不同：原集合中已经没有 B，新生成的通知副本也不包含 B。两次都不打印，但应区分“仍在副本中、因状态被跳过”和“已经不在新的通知名单中”。
+
+</details>
+
+## 复习后的自查
+
+- 能根据最近一次实际读取，判断哪些属性仍然订阅着当前 runner。
+- 能区分 Set 容器与成员引用，解释浅拷贝、删除成员和修改成员状态的不同结果。
+- 能区分数据赋值、通知订阅者、手动调用用户函数这三件事。
+- 能区分 activeEffect、previous、runner.deps 和 runner.stopped 的职责。
+- 能解释外层收集与停止后的手动执行，以及通知副本中的停止状态检查。
 
 ## 本节范围与下一步
 

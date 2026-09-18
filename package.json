@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node 01-reactivity/check.mjs && node 01-reactivity/check.mjs --reference",
+    "test": "npm run test:practice && npm run test:reference && npm run test:02 && npm run test:02:reference && npm run test:02:stop && npm run test:02:stop:reference",
     "test:practice": "node 01-reactivity/check.mjs",
     "test:reference": "node 01-reactivity/check.mjs --reference",
     "demo:branch": "node 01-reactivity/branch-demo.mjs",

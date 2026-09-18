@@ -7,8 +7,8 @@ function cleanup(runner) {
   // 找到对应的 Set，只删除当前 runner，然后清空 runner.deps。
   // 不要清空整个 Set，也不要清空 targetMap。
   for (const { target, key } of runner.deps) {
-    const dep = targetMap.get(target)?.get(key)
-    dep?.delete(runner)
+    const dep = targetMap.get(target)?.get(key);
+    dep?.delete(runner);
   }
   runner.deps.length = 0;
 }
@@ -18,11 +18,11 @@ export function effect(fn) {
     // 步骤 4：若 runner.stopped 为 true，直接 return fn()。
     // 已停止时不进入下面的 cleanup 和 activeEffect 切换流程。
     if (runner.stopped) {
-      return fn()
+      return fn();
     }
 
     // 步骤 3：在执行用户函数、重新收集依赖之前，清理当前 runner 的旧订阅。
-    cleanup(runner)
+    cleanup(runner);
     const previous = activeEffect;
     activeEffect = runner;
     try {
@@ -41,9 +41,9 @@ export function effect(fn) {
 export function stop(runner) {
   // 步骤 5：已停止则直接返回；否则清理已有订阅，并将 stopped 设为 true。
   // 不要清空整个 targetMap，也不要修改响应式对象的值。
-  if (runner.stopped) return
-  cleanup(runner)
-  runner.stopped = true
+  if (runner.stopped) return;
+  cleanup(runner);
+  runner.stopped = true;
 }
 
 function track(target, key) {
@@ -65,7 +65,7 @@ function track(target, key) {
   if (!dep.has(activeEffect)) {
     dep.add(activeEffect);
     // 步骤 2：让 activeEffect.deps 记住这组 { target, key }。
-    activeEffect.deps.push({ target, key })
+    activeEffect.deps.push({ target, key });
     // 这里在新订阅建立时执行，避免重复读取造成反向记录重复。
   }
 }
