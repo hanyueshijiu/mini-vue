@@ -8,14 +8,18 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "npm run test:practice && npm run test:reference && npm run test:02 && npm run test:02:reference && npm run test:02:stop && npm run test:02:stop:reference",
+    "test": "npm run test:practice && npm run test:reference && npm run test:02 && npm run test:02:reference && npm run test:02:stop && npm run test:02:stop:reference && npm run test:03 && npm run test:03:reference",
     "test:practice": "node 01-reactivity/check.mjs",
     "test:reference": "node 01-reactivity/check.mjs --reference",
     "demo:branch": "node 01-reactivity/branch-demo.mjs",
     "test:02": "node 02-effect-cleanup/check.mjs",
     "test:02:reference": "node 02-effect-cleanup/check.mjs --reference",
     "test:02:stop": "node 02-effect-cleanup/check-stop.mjs",
-    "test:02:stop:reference": "node 02-effect-cleanup/check-stop.mjs --reference"
+    "test:02:stop:reference": "node 02-effect-cleanup/check-stop.mjs --reference",
+    "test:03": "node 03-deep-reactivity/check.mjs",
+    "test:03:reference": "node 03-deep-reactivity/check.mjs --reference",
+    "demo:03": "node 03-deep-reactivity/demo.mjs",
+    "demo:03:reference": "node 03-deep-reactivity/demo.mjs --reference"
   },
   "repository": {
     "type": "git",
