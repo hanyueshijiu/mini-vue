@@ -4,7 +4,9 @@
 
 ## 学习状态
 
-**已学习，待复习（2026-09-21）。** 已跟随 README 完成三个步骤，手写实现通过 8 项验收；尚未完成本课的独立练习与系统复习。下一轮优先回顾代理缓存命中的返回值，以及两个 WeakMap 的登记方向。
+**已复习，待巩固（2026-09-25）。** 2026-09-21 已跟随 README 完成实现并通过 8 项验收；本轮问答复习现已完成。能够在引导后推演关键场景，但输入与返回值的引用身份、缓存跨调用保留，以及属性读取时机仍需独立练习。
+
+本轮记录见下方[复习重点](#本轮复习重点)。后续先按“传入哪个对象 → 缓存里已有哪条记录 → 返回哪个对象”的顺序推演，再核对结果。
 
 ## 先观察第二课的边界
 
@@ -110,7 +112,7 @@ reactive 的入口顺序是：
 3. 如果原始对象已有缓存代理，返回缓存。
 4. 否则创建新代理，把两个方向都登记好，再返回。
 
-根代理会在第一次读取嵌套属性前登记好。遇到 raw.self = raw 这样的循环引用时，读取 state.self 就能复用根代理，而不必递归创建无穷多份代理。
+根代理会在第一次读取嵌套属性前登记好。遇到 raw.self = raw 这样的循环引用时，读取 state.self 就能复用根代理，保持 state.self === state。创建代理时不会预先遍历 self，因此不能把“没有缓存”直接等同于“初始化时必然无限递归”。
 
 Vue 正式实现同样保留原始对象到代理的缓存，同时使用内部标记识别代理；本课用反向 WeakMap 便于观察。对应入口为 [createReactiveObject](https://github.com/vuejs/core/blob/v3.5.42/packages/reactivity/src/reactive.ts#L251)。
 
@@ -147,7 +149,7 @@ npm run demo:03:reference
 
 也可以直接运行本目录的 check.mjs、demo.mjs，使用 --reference 选择参考实现。
 
-当前手写实现已经通过以下 8 项验收。行为验收通过记录的是本课约定的实现结果，独立解释和练习仍保留为待复习事项：
+当前手写实现已经通过以下 8 项验收。行为验收记录实现结果；本轮已做问答复习，独立解释和脱稿实现仍需要继续巩固：
 
 - 多层属性变化更新，未使用的属性不引起更新。
 - 替换嵌套对象后清理旧对象订阅，并订阅新对象。
@@ -160,7 +162,7 @@ npm run demo:03:reference
 
 完成后再对照 [reference.mjs](./reference.mjs)。无需重写 effect、cleanup、stop、track 或 trigger。
 
-## 本轮易混淆点
+## 实现时的易混淆点
 
 ### 步骤 B：两种命中情况，返回值不同
 
@@ -210,16 +212,198 @@ raw ←── proxyToRaw ─── proxy
 
 这两张表存的是对象与代理的对应关系；targetMap 存的是原始对象、属性和订阅者的关系。复习时要分别说明它们解决的问题。
 
-## 待复习清单
+## 本轮复习重点
 
-- [ ] 脱离 README 解释两个 WeakMap 各自的 key、value 和用途。
-- [ ] 分别推演 reactive(raw) 首次调用、再次调用和 reactive(proxy) 的返回值。
+以下场景按第三课已完成的实现推演，每段代码独立执行。复习中先出现误判，再拆解调用顺序得到正确解释；这些记录用于继续巩固，不等同于已经能脱离提示完成所有推演。
+
+### 1. 参数接收的是实参，不会自动变成原始对象
+
+```js
+const raw = { count: 1 };
+const proxy1 = reactive(raw);
+const another = reactive(proxy1);
+```
+
+最后一行传入的是括号中的 proxy1；another 负责接收返回值。进入 reactive 时，形参 target 与 proxy1 指向同一个代理对象，不会自动沿代理关系变成 raw。
+
+| 同名参数出现的位置 | 参数由谁传入 | 本例中的含义 |
+| --- | --- | --- |
+| reactive(target) | 调用 reactive 的代码 | 传入 raw 就接收 raw；传入 proxy1 就接收 proxy1 |
+| Proxy 的 get(target, key, receiver) | JavaScript 的 Proxy 机制 | 创建这个代理时传给 new Proxy 的对象 |
+
+target 只是参数名，并不固定表示原始对象。本课正常创建的 Proxy 包装原始对象，所以 get 中的 target 通常是原始对象；这不改变 reactive 的普通传参规则。
+
+proxyToRaw.has(proxy1) 只返回布尔值。要取出 raw，需要明确执行 proxyToRaw.get(proxy1)。识别到已经是自己的代理时，reactive 直接返回传入的代理，而不是返回它内部关联的原始对象。
+
+### 2. 返回已有引用不会创建新对象，缓存会跨调用保留
+
+```js
+const raw = { count: 1 };
+const a = reactive(raw);
+const b = reactive(raw);
+const c = reactive(a);
+
+console.log(a === b);
+console.log(a === c);
+console.log(b === raw);
+```
+
+<details>
+<summary>查看结果与逐次调用后的缓存状态</summary>
+
+```text
+true
+true
+false
+```
+
+| 调用 | target 接收谁 | 命中的路径 | 返回谁 |
+| --- | --- | --- | --- |
+| a = reactive(raw) | raw | 没有缓存，创建代理并登记两个方向 | 新代理，随后由 a 引用 |
+| b = reactive(raw) | 同一个 raw | reactiveMap.get(raw) 取得已有代理 | a 所指的代理 |
+| c = reactive(a) | 代理 a | proxyToRaw.has(a) 为 true | a 本身 |
+
+第一行调用结束前就已经执行了登记，随后两张表包含：
+
+```text
+reactiveMap：raw → a
+proxyToRaw：a   → raw
+```
+
+它们在 reactive 函数外创建，同一模块实例中的后续调用共用这些缓存，不会每次调用重新清空。整段代码只创建了一个 Proxy，a、b、c 都指向它。
+
+本轮最后一题仍曾把 a === b 判断为 false，原因是漏掉了 a 那次调用返回之前已经登记缓存。后续推演时，要先写下上一行执行后留下的状态。
+
+新变量名不代表新对象，函数返回已有对象也不会复制对象。const b = a 和函数直接 return a 都只是传递同一个对象引用。
+
+</details>
+
+查表时只按 key 查找，不会倒着按 value 查找。对于上面的记录，proxyToRaw.get(raw) 返回 undefined；raw 在这条记录中是 value，key 是代理 a。reactiveMap 用 raw 找代理，proxyToRaw 用代理找 raw。
+
+### 3. 创建代理与登记订阅是不同动作
+
+```js
+const raw = {
+  user: { profile: { age: 18 } },
+  unused: { enabled: true },
+};
+const state = reactive(raw);
+const user = state.user;
+```
+
+假设这些对象此前未创建过代理，这段代码会创建根代理和 user 代理；profile、unused 未被读取，尚未创建对应代理。age 和 enabled 是基本类型，本身不需要 Proxy。
+
+这里没有调用 effect，没有 runner 执行，activeEffect 仍是 undefined。state.user 的 get 虽然调用 track，但 track 直接返回，不会登记订阅者。这个 return 只结束 track，get 仍会继续返回 user 的代理。
+
+更深一层的误区是：即使已经有 effect，也只收集它执行期间实际读取的属性，不会因为返回了深层代理就自动订阅所有子属性。
+
+下面三种写法分别独立考察；rawUser 表示首次执行时 raw.user 对应的原始对象：
+
+| 写法 | 首次执行收集的 target/key |
+| --- | --- |
+| effect 内只读取 state.user | (raw, 'user') |
+| effect 内读取 state.user.age | (raw, 'user') 和 (rawUser, 'age') |
+| 在 effect 外先取 user = state.user，effect 内只读取 user.age | 只有 (rawUser, 'age') |
+
+创建代理是在准备拦截能力，track 则需要一个当前执行的 runner 来登记关系。进入 set 也不会自动创建 effect；set 通过 trigger 通知已经登记的订阅者。
+
+### 4. 提前保存的嵌套代理，不会随父属性替换自动改指向
+
+先看在 effect 内沿 state.user.age 读取的情况：
+
+```js
+const state = reactive({ user: { age: 18 } });
+const oldUser = state.user;
+
+effect(() => console.log(state.user.age));
+state.user = { age: 20 };
+oldUser.age = 99;
+// 打印：18、20
+```
+
+根对象的 user 属性也被订阅。替换 user 会重跑 runner，清理旧对象 age 的订阅，并读取、订阅新对象。oldUser 仍是有效代理，只是这个 runner 不再订阅它的 age。
+
+再看提前保存 user、effect 内只读取 user.age 的情况：
+
+```js
+const state = reactive({ user: { age: 18 } });
+const user = state.user;
+
+effect(() => console.log(user.age));
+state.user = { age: 20 };
+user.age = 19;
+console.log(state.user.age, user.age);
+```
+
+<details>
+<summary>查看结果与引用关系</summary>
+
+```text
+18
+19
+20 19
+```
+
+| 位置 | 最后关联的对象 |
+| --- | --- |
+| 根原始对象的 user 属性 | 新对象，age 为 20 |
+| 局部变量 user | 旧对象的代理，旧对象的 age 已改成 19 |
+
+runner 执行期间只读取旧对象的 age，没有读取根对象的 user 属性。因此，替换 state.user 不通知它，修改 user.age 才通知它。
+
+const user = state.user 保存的是当时得到的代理引用，不是一个会自动重新求值的表达式。依赖表也保存实际原始对象的引用与 key，不会把“raw.user.age”当作字符串路径，在父属性被替换后自行改绑。
+
+</details>
+
+### 5. 比较的是对象身份，toRaw 用于统一代理与原始值
+
+从下面相同的初始状态，分别考察三种赋值：
+
+```js
+const raw = { user: { age: 18 } };
+const state = reactive(raw);
+```
+
+| 赋值 | set 收到的新值 | 直接比较 target[key] 与 value | 转为原始值后比较 |
+| --- | --- | --- | --- |
+| state.user = state.user | user 的代理 | false | true，不因本次赋值通知更新 |
+| state.user = raw.user | 原始 user 对象 | true | true，不因本次赋值通知更新 |
+| state.user = { age: 18 } | 新创建的原始对象 | false | false，通知相应订阅者 |
+
+右侧 state.user 会经过 get，最终返回代理；右侧 raw.user 则直接读取原始对象的属性。读取不会把 raw.user 中保存的原始对象替换成代理。
+
+toRaw 将本模块的代理还原为原始对象引用，再用 Object.is 比较。它不克隆对象，也不比较两个对象的属性内容。两个新建的 { age: 18 } 内容相同，仍然是不同对象；如果 runner 订阅了根对象的 user，替换为新对象仍会让它执行。
+
+### 6. 循环引用复用的是已有代理，没有额外包一层
+
+```js
+const raw = { count: 1 };
+raw.self = raw;
+const state = reactive(raw);
+console.log(state.self === state); // true
+```
+
+读取 self 时，Reflect.get 取到的是 raw.self，也就是 raw。随后 reactive(raw) 在 reactiveMap 中找到已创建的根代理 state，直接返回，因此比较为 true。raw.self 仍指向 raw。
+
+若取消缓存复用，让每次 reactive(raw) 都创建新 Proxy，本次比较会是 false。那是另一个直接包装 raw 的代理，不是在 state 外面再套一层：
+
+```text
+state          → 代理 A → raw
+state.self结果 → 代理 B → raw
+```
+
+两个代理包装同一个原始对象，并不保证它们本身相等。缓存的作用是返回同一个已有代理；按需转换则保证创建代理时不预先展开整棵对象树。
+
+## 待巩固清单
+
+- [x] 完成本轮关于引用身份、按需代理、缓存和依赖收集的问答复习。
+- [x] 在问答中写出两个 WeakMap 正确方向的登记语句。
+- [ ] 无提示推演 reactive(raw) 首次调用、再次调用和 reactive(proxy)，逐次列出缓存状态与返回值。
 - [ ] 独立重写步骤 A、B、C，并通过本课验收。
-- [ ] 解释 state.user.age 的两次读取分别触发哪个对象的 get，收集哪两组 target/key。
-- [ ] 解释按需代理与创建时遍历整棵对象树的区别，并区分创建代理和收集依赖。
-- [ ] 解释 state.user = state.user 为什么需要比较原始对象身份。
+- [ ] 独立区分只读取 state.user、读取 state.user.age、提前保存 user 后读取 user.age 的订阅关系。
+- [ ] 独立解释两种对象替换场景的输出，以及 state.user = state.user 的 toRaw 比较过程。
 
-完成这些复习后，再更新学习状态；当前保持“已学习，待复习”。
+本轮复习已经完成，当前状态为“已复习，待巩固”。下一次优先练习引用身份和跨调用的缓存状态，不只记忆比较结果。
 
 ## 本课范围
 
