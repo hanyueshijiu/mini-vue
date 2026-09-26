@@ -22,7 +22,8 @@ npm test
 | --- | --- | --- |
 | 01 · 响应式基础 | 已完成 | [课程说明与复盘](./01-reactivity/README.md) |
 | 02 · 依赖清理与 stop | 已完成 | [课程说明、练习与复盘](./02-effect-cleanup/README.md) |
-| 03 · 深层响应式与代理缓存 | 已完成本轮巩固，待独立实践 | [课程说明与学习记录](./03-deep-reactivity/README.md) |
+| 03 · 深层响应式与代理缓存 | 已完成 | [课程说明与学习记录](./03-deep-reactivity/README.md) |
+| 04 · ref 与属性引用 | 已规划，待学习 | [课程安排与源码入口](./04-ref/README.md) |
 
 ## 目录约定
 
